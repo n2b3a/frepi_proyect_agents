@@ -592,6 +592,517 @@
         -2016,
         240
       ]
+    },
+    {
+      "parameters": {
+        "name": "shopping_flow",
+        "description": "Gerencia o fluxo completo de compra inteligente, comparação de preços e checkout.",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# 🛒 SHOPPING FLOW AGENT\n\n## RESPONSABILIDADE\nGerenciar todo o fluxo de compra do restaurante desde a lista até o checkout.\n\n## TOOLS DISPONÍVEIS\n\n### normalize_shopping_list\nNormaliza a lista de compras enviada pelo usuário.\nRecebe texto livre, retorna array estruturado de produtos.\n\n### calculate_savings\nCalcula economia total comparando preços de fornecedores.\n\n### segment_by_supplier\nSegmenta produtos por fornecedor para otimizar logística.\n\n### get_prices_for_product\nBusca preços de um produto específico em todos fornecedores.\n\n### calculate_best_price\nDetermina melhor preço considerando preferências do usuário.\n\n### execute_checkout\nExecuta o pedido confirmado pelo usuário.\n\n## FLUXO TÍPICO\n\n1. Receber lista de compra (texto livre)\n2. Normalizar lista → identificar produtos\n3. Para cada produto → buscar preços\n4. Calcular melhor preço (considerar preferências)\n5. Segmentar por fornecedor\n6. Apresentar resumo com economia\n7. Confirmar com usuário\n8. Executar checkout\n\n## REGRAS\n\n- Sempre mostrar comparação de preços\n- Destacar economia total em R$ e %\n- Agrupar por fornecedor para minimizar entregas\n- Respeitar preferências de marca quando possível\n- Avisar se produto não encontrado\n- Confirmar antes de executar pedido\n\n## OUTPUT\nPortuguês brasileiro, emojis: 🛒💰📊✅"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -448,
+        1472
+      ],
+      "id": "11111111-aaaa-bbbb-cccc-111111111111",
+      "name": "Shopping Flow Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 2500
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        1696
+      ],
+      "id": "22222222-aaaa-bbbb-cccc-222222222222",
+      "name": "OpenAI Chat Shopping",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -224,
+        1920
+      ],
+      "id": "33333333-aaaa-bbbb-cccc-333333333333",
+      "name": "Memory Shopping"
+    },
+    {
+      "parameters": {
+        "description": "Normaliza lista de compras do usuário em formato estruturado.",
+        "jsCode": "const input = $input.first().json;\nconst shoppingListText = input.shopping_list || input.message || input.text;\n\nif (!shoppingListText) {\n  return {\n    json: {\n      error: true,\n      message: \"Lista de compras não fornecida\"\n    }\n  };\n}\n\nconst lines = shoppingListText.split('\\n').filter(line => line.trim());\nconst items = [];\n\nfor (const line of lines) {\n  const match = line.match(/^\\s*(?:\\d+[\\.)\\-]?\\s+)?(.+?)(?:\\s+[-–]\\s+(\\d+(?:[\\.,]\\d+)?)\\s*(kg|g|l|ml|un|unidade|unidades|pacote|caixa)?)?\\s*$/i);\n  \n  if (match) {\n    const product = match[1].trim();\n    const quantity = match[2] ? parseFloat(match[2].replace(',', '.')) : 1;\n    const unit = match[3] || 'un';\n    \n    items.push({\n      product_name: product,\n      quantity: quantity,\n      unit: unit.toLowerCase(),\n      original_line: line.trim()\n    });\n  } else {\n    items.push({\n      product_name: line.trim(),\n      quantity: 1,\n      unit: 'un',\n      original_line: line.trim()\n    });\n  }\n}\n\nreturn {\n  json: {\n    success: true,\n    items_count: items.length,\n    normalized_items: items\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        1472
+      ],
+      "id": "44444444-aaaa-bbbb-cccc-444444444444",
+      "name": "normalize_shopping_list"
+    },
+    {
+      "parameters": {
+        "description": "Calcula economia total comparando preços entre fornecedores.",
+        "jsCode": "const input = $input.first().json;\nconst priceComparisons = input.price_comparisons || [];\n\nif (!priceComparisons || priceComparisons.length === 0) {\n  return {\n    json: {\n      total_savings: 0,\n      savings_percent: 0,\n      message: \"Nenhuma comparação de preços disponível\"\n    }\n  };\n}\n\nlet totalBestPrice = 0;\nlet totalMaxPrice = 0;\n\nfor (const item of priceComparisons) {\n  const prices = item.prices || [];\n  if (prices.length > 0) {\n    const bestPrice = Math.min(...prices.map(p => p.price));\n    const maxPrice = Math.max(...prices.map(p => p.price));\n    const quantity = item.quantity || 1;\n    \n    totalBestPrice += bestPrice * quantity;\n    totalMaxPrice += maxPrice * quantity;\n  }\n}\n\nconst savings = totalMaxPrice - totalBestPrice;\nconst savingsPercent = totalMaxPrice > 0 ? (savings / totalMaxPrice) * 100 : 0;\n\nreturn {\n  json: {\n    total_best_price: totalBestPrice.toFixed(2),\n    total_max_price: totalMaxPrice.toFixed(2),\n    total_savings: savings.toFixed(2),\n    savings_percent: savingsPercent.toFixed(1),\n    formatted_message: `💰 Economia de R$ ${savings.toFixed(2)} (${savingsPercent.toFixed(1)}%)`\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        1696
+      ],
+      "id": "55555555-aaaa-bbbb-cccc-555555555555",
+      "name": "calculate_savings"
+    },
+    {
+      "parameters": {
+        "description": "Segmenta produtos por fornecedor para otimizar entregas.",
+        "jsCode": "const input = $input.first().json;\nconst items = input.items || input.normalized_items || [];\n\nif (!items || items.length === 0) {\n  return {\n    json: {\n      error: true,\n      message: \"Nenhum item para segmentar\"\n    }\n  };\n}\n\nconst supplierGroups = {};\n\nfor (const item of items) {\n  const supplierId = item.best_supplier_id || item.supplier_id || 'unknown';\n  const supplierName = item.best_supplier_name || item.supplier_name || 'Fornecedor não identificado';\n  \n  if (!supplierGroups[supplierId]) {\n    supplierGroups[supplierId] = {\n      supplier_id: supplierId,\n      supplier_name: supplierName,\n      items: [],\n      total_value: 0,\n      items_count: 0\n    };\n  }\n  \n  supplierGroups[supplierId].items.push(item);\n  supplierGroups[supplierId].items_count++;\n  supplierGroups[supplierId].total_value += (item.best_price || item.price || 0) * (item.quantity || 1);\n}\n\nconst segments = Object.values(supplierGroups);\n\nreturn {\n  json: {\n    success: true,\n    suppliers_count: segments.length,\n    segments: segments,\n    summary: segments.map(s => `📦 ${s.supplier_name}: ${s.items_count} itens - R$ ${s.total_value.toFixed(2)}`).join('\\n')\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        1920
+      ],
+      "id": "66666666-aaaa-bbbb-cccc-666666666666",
+      "name": "segment_by_supplier"
+    },
+    {
+      "parameters": {
+        "description": "Busca preços de um produto em todos os fornecedores disponíveis.",
+        "jsCode": "const input = $input.first().json;\nconst productName = input.product_name || input.product;\n\nif (!productName) {\n  return {\n    json: {\n      error: true,\n      message: \"Nome do produto não fornecido\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const response = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/suppliers_products`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'select': 'price,supplier_id,suppliers(name,city),products(name,brand,format)',\n      'products.name': `ilike.%${productName}%`,\n      'order': 'price.asc'\n    },\n    json: true\n  });\n  \n  if (response && response.length > 0) {\n    const prices = response.map(item => ({\n      supplier_id: item.supplier_id,\n      supplier_name: item.suppliers?.name || 'N/A',\n      supplier_city: item.suppliers?.city || 'N/A',\n      product_name: item.products?.name || productName,\n      brand: item.products?.brand || 'N/A',\n      format: item.products?.format || 'N/A',\n      price: parseFloat(item.price)\n    }));\n    \n    return {\n      json: {\n        success: true,\n        product_name: productName,\n        prices_found: prices.length,\n        prices: prices,\n        best_price: prices[0]\n      }\n    };\n  } else {\n    return {\n      json: {\n        success: false,\n        product_name: productName,\n        prices_found: 0,\n        message: `Produto \"${productName}\" não encontrado no catálogo`\n      }\n    };\n  }\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao buscar preços: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2144
+      ],
+      "id": "77777777-aaaa-bbbb-cccc-777777777777",
+      "name": "get_prices_for_product"
+    },
+    {
+      "parameters": {
+        "description": "Determina melhor preço considerando preferências do usuário (marca, formato).",
+        "jsCode": "const input = $input.first().json;\nconst prices = input.prices || [];\nconst userPreferences = input.user_preferences || {};\n\nif (!prices || prices.length === 0) {\n  return {\n    json: {\n      error: true,\n      message: \"Nenhum preço disponível para análise\"\n    }\n  };\n}\n\nconst preferredBrands = userPreferences.preferred_brands || [];\nconst preferredFormats = userPreferences.preferred_formats || [];\n\nlet bestOption = null;\nlet bestScore = -1;\n\nfor (const option of prices) {\n  let score = 0;\n  \n  const normalizedPrice = option.price;\n  const maxPrice = Math.max(...prices.map(p => p.price));\n  const priceScore = maxPrice > 0 ? (1 - (normalizedPrice / maxPrice)) * 100 : 0;\n  score += priceScore * 0.6;\n  \n  if (preferredBrands.length > 0 && preferredBrands.includes(option.brand)) {\n    score += 30;\n  }\n  \n  if (preferredFormats.length > 0 && preferredFormats.includes(option.format)) {\n    score += 10;\n  }\n  \n  if (score > bestScore) {\n    bestScore = score;\n    bestOption = option;\n  }\n}\n\nreturn {\n  json: {\n    success: true,\n    best_option: bestOption,\n    score: bestScore.toFixed(2),\n    all_options: prices.map(p => ({\n      ...p,\n      is_best: p.supplier_id === bestOption.supplier_id && p.price === bestOption.price\n    }))\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2368
+      ],
+      "id": "88888888-aaaa-bbbb-cccc-888888888888",
+      "name": "calculate_best_price"
+    },
+    {
+      "parameters": {
+        "description": "Executa o pedido confirmado pelo usuário, criando registros em Supabase.",
+        "jsCode": "const input = $input.first().json;\nconst orderData = input.order_data || {};\nconst phoneNumber = input.phone_number || input.channel_id;\n\nif (!orderData.items || orderData.items.length === 0) {\n  return {\n    json: {\n      error: true,\n      message: \"Nenhum item no pedido\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  // 1. Buscar user_id\n  const user = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/restaurant_people`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'whatsapp_number': `eq.${phoneNumber}`,\n      'select': 'id'\n    },\n    json: true\n  });\n\n  if (!user || user.length === 0) {\n    return {\n      json: {\n        error: true,\n        message: \"Usuário não encontrado\"\n      }\n    };\n  }\n\n  const userId = user[0].id;\n\n  // 2. Criar pedido\n  const orderResponse = await $request({\n    method: 'POST',\n    url: `${supabaseUrl}/rest/v1/orders`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json',\n      'Prefer': 'return=representation'\n    },\n    body: {\n      restaurant_person_id: userId,\n      total_value: orderData.total_value || 0,\n      status: 'pending',\n      created_at: new Date().toISOString()\n    },\n    json: true\n  });\n\n  const orderId = orderResponse[0].id;\n\n  // 3. Criar items do pedido\n  const orderItems = orderData.items.map(item => ({\n    order_id: orderId,\n    supplier_product_id: item.supplier_product_id,\n    quantity: item.quantity,\n    unit_price: item.price,\n    subtotal: item.quantity * item.price\n  }));\n\n  await $request({\n    method: 'POST',\n    url: `${supabaseUrl}/rest/v1/order_items`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    body: orderItems,\n    json: true\n  });\n\n  return {\n    json: {\n      success: true,\n      order_id: orderId,\n      items_count: orderItems.length,\n      total_value: orderData.total_value,\n      message: `✅ Pedido #${orderId} criado com sucesso!`\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao executar checkout: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2592
+      ],
+      "id": "99999999-aaaa-bbbb-cccc-999999999999",
+      "name": "execute_checkout"
+    },
+    {
+      "parameters": {
+        "name": "vector_search",
+        "description": "Busca semântica inteligente de produtos no catálogo usando similaridade.",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# 🔍 VECTOR SEARCH AGENT\n\n## RESPONSABILIDADE\nRealizar buscas semânticas inteligentes no catálogo de produtos.\nEncontrar produtos mesmo com descrições vagas ou imprecisas.\n\n## TOOLS DISPONÍVEIS\n\n### search_product_catalog\nBusca produtos no catálogo por texto.\nRetorna matches ordenados por relevância.\n\n### find_similar_products\nEncontra produtos similares a um produto específico.\nÚtil para sugerir alternativas.\n\n### validate_product_match\nValida se produto mencionado corresponde a produto no catálogo.\nRetorna confidence score.\n\n## LÓGICA\n\n1. Receber query do usuário (ex: \"arroz tio joão 5kg\")\n2. Buscar em catálogo\n3. Se múltiplos matches → retornar lista com scores\n4. Se nenhum match → buscar similares\n5. Validar match final\n\n## CASOS DE USO\n\n- Usuário digita \"oleo de soja\" → buscar todas marcas/formatos\n- Usuário menciona \"feijão preto\" → identificar produto específico\n- Produto não encontrado → sugerir alternativas\n\n## OUTPUT\nRetorna JSON:\n{\n  \"products_found\": int,\n  \"matches\": [\n    {\n      \"product_id\": \"uuid\",\n      \"product_name\": \"string\",\n      \"brand\": \"string\",\n      \"format\": \"string\",\n      \"confidence_score\": float\n    }\n  ],\n  \"suggestions\": []\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -1120,
+        1472
+      ],
+      "id": "aaaaaaaa-1111-2222-3333-444444444444",
+      "name": "Vector Search Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -896,
+        1696
+      ],
+      "id": "bbbbbbbb-1111-2222-3333-555555555555",
+      "name": "OpenAI Chat Vector",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -896,
+        1920
+      ],
+      "id": "cccccccc-1111-2222-3333-666666666666",
+      "name": "Memory Vector"
+    },
+    {
+      "parameters": {
+        "description": "Busca produtos no catálogo por nome, marca ou descrição.",
+        "jsCode": "const input = $input.first().json;\nconst searchQuery = input.query || input.search || input.product_name;\n\nif (!searchQuery) {\n  return {\n    json: {\n      error: true,\n      message: \"Query de busca não fornecida\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const response = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/products`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'or': `(name.ilike.%${searchQuery}%,brand.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%)`,\n      'select': 'id,name,brand,format,category,unit',\n      'limit': '20'\n    },\n    json: true\n  });\n\n  const matches = response.map((product, index) => {\n    const nameMatch = product.name.toLowerCase().includes(searchQuery.toLowerCase());\n    const brandMatch = product.brand?.toLowerCase().includes(searchQuery.toLowerCase());\n    const categoryMatch = product.category?.toLowerCase().includes(searchQuery.toLowerCase());\n\n    let score = 0;\n    if (nameMatch) score += 60;\n    if (brandMatch) score += 30;\n    if (categoryMatch) score += 10;\n\n    return {\n      product_id: product.id,\n      product_name: product.name,\n      brand: product.brand || 'N/A',\n      format: product.format || 'N/A',\n      category: product.category || 'N/A',\n      unit: product.unit || 'un',\n      confidence_score: score\n    };\n  }).sort((a, b) => b.confidence_score - a.confidence_score);\n\n  return {\n    json: {\n      success: true,\n      query: searchQuery,\n      products_found: matches.length,\n      matches: matches\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao buscar produtos: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        1472
+      ],
+      "id": "dddddddd-1111-2222-3333-777777777777",
+      "name": "search_product_catalog"
+    },
+    {
+      "parameters": {
+        "description": "Encontra produtos similares baseado em categoria e características.",
+        "jsCode": "const input = $input.first().json;\nconst productId = input.product_id;\nconst category = input.category;\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  let qs = {\n    'select': 'id,name,brand,format,category,unit',\n    'limit': '10'\n  };\n\n  if (productId) {\n    qs['id'] = `neq.${productId}`;\n  }\n\n  if (category) {\n    qs['category'] = `eq.${category}`;\n  }\n\n  const response = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/products`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: qs,\n    json: true\n  });\n\n  const similar = response.map(product => ({\n    product_id: product.id,\n    product_name: product.name,\n    brand: product.brand || 'N/A',\n    format: product.format || 'N/A',\n    category: product.category || 'N/A'\n  }));\n\n  return {\n    json: {\n      success: true,\n      similar_found: similar.length,\n      similar_products: similar\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao buscar similares: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        1696
+      ],
+      "id": "eeeeeeee-1111-2222-3333-888888888888",
+      "name": "find_similar_products"
+    },
+    {
+      "parameters": {
+        "description": "Valida correspondência entre texto do usuário e produto do catálogo.",
+        "jsCode": "const input = $input.first().json;\nconst userText = (input.user_text || '').toLowerCase();\nconst productName = (input.product_name || '').toLowerCase();\nconst productBrand = (input.product_brand || '').toLowerCase();\n\nif (!userText || !productName) {\n  return {\n    json: {\n      error: true,\n      message: \"Dados insuficientes para validação\"\n    }\n  };\n}\n\n// Calcular score de similaridade\nlet score = 0;\n\n// Palavras em comum\nconst userWords = userText.split(/\\s+/);\nconst productWords = productName.split(/\\s+/);\n\nconst commonWords = userWords.filter(word =>\n  productWords.some(pWord => pWord.includes(word) || word.includes(pWord))\n);\n\nscore += (commonWords.length / userWords.length) * 70;\n\n// Match de marca\nif (productBrand && userText.includes(productBrand)) {\n  score += 30;\n}\n\n// Match exato\nif (userText === productName) {\n  score = 100;\n}\n\nconst confidence = Math.min(Math.round(score), 100);\n\nreturn {\n  json: {\n    is_valid_match: confidence >= 60,\n    confidence_score: confidence,\n    confidence_level: confidence >= 80 ? 'high' : confidence >= 60 ? 'medium' : 'low',\n    matched_words: commonWords\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        1920
+      ],
+      "id": "ffffffff-1111-2222-3333-999999999999",
+      "name": "validate_product_match"
+    },
+    {
+      "parameters": {
+        "name": "preference_config",
+        "description": "Configura preferências de compra do restaurante (marcas, formatos, frequências).",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# ⚙️ PREFERENCE CONFIG AGENT\n\n## RESPONSABILIDADE\nGerenciar configuração de preferências de compra do restaurante.\n\n## TOOLS DISPONÍVEIS\n\n### save_user_preferences\nSalva preferências gerais do usuário.\nCampos: preferred_brands, preferred_formats, special_restrictions.\n\n### update_delivery_preferences\nAtualiza preferências de entrega.\nCampos: order_frequency, delivery_schedule, preferred_suppliers.\n\n## FLUXO DE CONFIGURAÇÃO\n\n1. Perguntar campo por campo (não todos de uma vez)\n2. Validar entrada do usuário\n3. Salvar incrementalmente\n4. Mostrar progresso (% completude)\n5. Confirmar salvamento\n\n## CAMPOS DE PREFERÊNCIA\n\n### preferred_brands (array)\n\"Quais marcas você costuma comprar?\"\nExemplos: Tio João, Sadia, Aurora\n\n### preferred_formats (array)\n\"Quais formatos/tamanhos prefere?\"\nExemplos: 5kg, caixa com 12 unidades, fardo\n\n### order_frequency (string)\n\"Com que frequência faz pedidos?\"\nOpções: diário, semanal, quinzenal, mensal\n\n### delivery_schedule (string)\n\"Qual melhor horário para entregas?\"\nExemplos: manhã (8h-12h), tarde (13h-17h)\n\n### special_restrictions (text)\n\"Alguma restrição especial?\"\nExemplos: sem glúten, orgânicos, fornecedor local\n\n## REGRAS\n\n- UMA pergunta por vez\n- Aceitar respostas em formato livre\n- Normalizar antes de salvar\n- Permitir pular campos (opcional)\n- Calcular completude após cada salvamento\n\n## OUTPUT\nPortuguês brasileiro, tom conversacional, emojis: ⚙️✅📋⭐"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -1120,
+        2144
+      ],
+      "id": "aaaabbbb-2222-3333-4444-555555555555",
+      "name": "Preference Config Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -896,
+        2368
+      ],
+      "id": "bbbbcccc-2222-3333-4444-666666666666",
+      "name": "OpenAI Chat Preference",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 15
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -896,
+        2592
+      ],
+      "id": "ccccdddd-2222-3333-4444-777777777777",
+      "name": "Memory Preference"
+    },
+    {
+      "parameters": {
+        "description": "Salva ou atualiza preferências gerais do usuário em Supabase.",
+        "jsCode": "const input = $input.first().json;\nconst phoneNumber = input.phone_number || input.channel_id;\nconst preferences = input.preferences || {};\n\nif (!phoneNumber) {\n  return {\n    json: {\n      error: true,\n      message: \"Phone number não fornecido\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  // Buscar usuário\n  const user = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/restaurant_people`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'whatsapp_number': `eq.${phoneNumber}`,\n      'select': 'id'\n    },\n    json: true\n  });\n\n  if (!user || user.length === 0) {\n    return {\n      json: {\n        error: true,\n        message: \"Usuário não encontrado\"\n      }\n    };\n  }\n\n  const userId = user[0].id;\n\n  // Atualizar preferências\n  const updateData = {};\n\n  if (preferences.preferred_brands) {\n    updateData.preferred_brands = Array.isArray(preferences.preferred_brands)\n      ? preferences.preferred_brands\n      : preferences.preferred_brands.split(',').map(b => b.trim());\n  }\n\n  if (preferences.preferred_formats) {\n    updateData.preferred_formats = Array.isArray(preferences.preferred_formats)\n      ? preferences.preferred_formats\n      : preferences.preferred_formats.split(',').map(f => f.trim());\n  }\n\n  if (preferences.special_restrictions) {\n    updateData.special_restrictions = preferences.special_restrictions;\n  }\n\n  await $request({\n    method: 'PATCH',\n    url: `${supabaseUrl}/rest/v1/restaurant_people`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'id': `eq.${userId}`\n    },\n    body: updateData,\n    json: true\n  });\n\n  return {\n    json: {\n      success: true,\n      user_id: userId,\n      updated_fields: Object.keys(updateData),\n      message: \"✅ Preferências salvas com sucesso!\"\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao salvar preferências: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        2144
+      ],
+      "id": "ddddeeee-2222-3333-4444-888888888888",
+      "name": "save_user_preferences"
+    },
+    {
+      "parameters": {
+        "description": "Atualiza preferências de entrega e frequência de pedidos.",
+        "jsCode": "const input = $input.first().json;\nconst phoneNumber = input.phone_number || input.channel_id;\nconst deliveryPrefs = input.delivery_preferences || {};\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const user = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/restaurant_people`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'whatsapp_number': `eq.${phoneNumber}`,\n      'select': 'id'\n    },\n    json: true\n  });\n\n  if (!user || user.length === 0) {\n    return {\n      json: {\n        error: true,\n        message: \"Usuário não encontrado\"\n      }\n    };\n  }\n\n  const userId = user[0].id;\n\n  const updateData = {};\n\n  if (deliveryPrefs.order_frequency) {\n    const validFrequencies = ['diário', 'semanal', 'quinzenal', 'mensal'];\n    const frequency = deliveryPrefs.order_frequency.toLowerCase();\n    if (validFrequencies.some(f => frequency.includes(f))) {\n      updateData.order_frequency = frequency;\n    }\n  }\n\n  if (deliveryPrefs.delivery_schedule) {\n    updateData.delivery_schedule = deliveryPrefs.delivery_schedule;\n  }\n\n  if (deliveryPrefs.preferred_suppliers) {\n    updateData.preferred_suppliers = Array.isArray(deliveryPrefs.preferred_suppliers)\n      ? deliveryPrefs.preferred_suppliers\n      : deliveryPrefs.preferred_suppliers.split(',').map(s => s.trim());\n  }\n\n  await $request({\n    method: 'PATCH',\n    url: `${supabaseUrl}/rest/v1/restaurant_people`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'id': `eq.${userId}`\n    },\n    body: updateData,\n    json: true\n  });\n\n  return {\n    json: {\n      success: true,\n      updated_fields: Object.keys(updateData),\n      message: \"✅ Preferências de entrega atualizadas!\"\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao atualizar: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        2368
+      ],
+      "id": "eeeefffff-2222-3333-4444-999999999999",
+      "name": "update_delivery_preferences"
+    },
+    {
+      "parameters": {
+        "name": "supplier_manager",
+        "description": "Gerencia cadastro e atualização de dados de fornecedores.",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# 📦 SUPPLIER MANAGER AGENT\n\n## RESPONSABILIDADE\nGerenciar cadastro de fornecedores no sistema.\n\n## TOOLS DISPONÍVEIS\n\n### register_supplier\nRegistra novo fornecedor no Supabase.\nCampos obrigatórios: name, cnpj, contact_phone, city.\n\n### update_supplier_data\nAtualiza dados de fornecedor existente.\n\n## FLUXO DE REGISTRO\n\n1. Cumprimentar fornecedor\n2. Coletar dados essenciais:\n   - Nome da empresa\n   - CNPJ (validar formato)\n   - Telefone de contato\n   - Cidade\n   - Categorias de produtos que fornece\n3. Validar dados\n4. Salvar no Supabase\n5. Confirmar registro\n6. Oferecer próximo passo (upload de preços)\n\n## VALIDAÇÕES\n\n### CNPJ\n- Formato: XX.XXX.XXX/XXXX-XX\n- 14 dígitos numéricos\n- Se inválido → pedir reenvio\n\n### Telefone\n- Formato: (XX) XXXXX-XXXX\n- Aceitar com ou sem formatação\n\n### Categorias\n- hortifruti, carnes, grãos, laticínios, bebidas, limpeza\n- Aceitar múltiplas categorias\n\n## FLUXO DE ATUALIZAÇÃO\n\n1. Identificar fornecedor (por CNPJ ou nome)\n2. Perguntar o que deseja atualizar\n3. Coletar novo valor\n4. Confirmar atualização\n\n## REGRAS\n\n- Sempre validar CNPJ único (não duplicar)\n- Confirmar dados antes de salvar\n- Tom profissional mas amigável\n- Explicar próximos passos claramente\n\n## OUTPUT\nPortuguês brasileiro, emojis: 📦✅📝📋"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -448,
+        2144
+      ],
+      "id": "aaaa1111-3333-4444-5555-666666666666",
+      "name": "Supplier Manager Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        2368
+      ],
+      "id": "bbbb1111-3333-4444-5555-777777777777",
+      "name": "OpenAI Chat SupplierMgr",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 15
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -224,
+        2592
+      ],
+      "id": "cccc1111-3333-4444-5555-888888888888",
+      "name": "Memory SupplierMgr"
+    },
+    {
+      "parameters": {
+        "description": "Registra novo fornecedor no sistema Supabase.",
+        "jsCode": "const input = $input.first().json;\nconst supplierData = input.supplier_data || {};\n\n// Validações\nconst required = ['name', 'cnpj', 'contact_phone', 'city'];\nfor (const field of required) {\n  if (!supplierData[field]) {\n    return {\n      json: {\n        error: true,\n        message: `Campo obrigatório faltando: ${field}`\n      }\n    };\n  }\n}\n\n// Validar CNPJ (remover formatação)\nconst cnpj = supplierData.cnpj.replace(/[^\\d]/g, '');\nif (cnpj.length !== 14) {\n  return {\n    json: {\n      error: true,\n      message: \"CNPJ inválido. Deve ter 14 dígitos.\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  // Verificar se CNPJ já existe\n  const existing = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/suppliers`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'cnpj': `eq.${cnpj}`\n    },\n    json: true\n  });\n\n  if (existing && existing.length > 0) {\n    return {\n      json: {\n        error: true,\n        message: \"CNPJ já cadastrado no sistema.\"\n      }\n    };\n  }\n\n  // Criar fornecedor\n  const response = await $request({\n    method: 'POST',\n    url: `${supabaseUrl}/rest/v1/suppliers`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json',\n      'Prefer': 'return=representation'\n    },\n    body: {\n      name: supplierData.name,\n      cnpj: cnpj,\n      contact_phone: supplierData.contact_phone,\n      city: supplierData.city,\n      categories: supplierData.categories || [],\n      created_at: new Date().toISOString()\n    },\n    json: true\n  });\n\n  const supplier = response[0];\n\n  return {\n    json: {\n      success: true,\n      supplier_id: supplier.id,\n      supplier_name: supplier.name,\n      message: `✅ Fornecedor ${supplier.name} cadastrado com sucesso!`\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao registrar fornecedor: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2144
+      ],
+      "id": "dddd1111-3333-4444-5555-999999999999",
+      "name": "register_supplier"
+    },
+    {
+      "parameters": {
+        "description": "Atualiza dados de fornecedor existente no Supabase.",
+        "jsCode": "const input = $input.first().json;\nconst supplierId = input.supplier_id;\nconst cnpj = input.cnpj;\nconst updateData = input.update_data || {};\n\nif (!supplierId && !cnpj) {\n  return {\n    json: {\n      error: true,\n      message: \"Necessário fornecer supplier_id ou cnpj\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  let filterKey = 'id';\n  let filterValue = supplierId;\n\n  if (!supplierId && cnpj) {\n    filterKey = 'cnpj';\n    filterValue = cnpj.replace(/[^\\d]/g, '');\n  }\n\n  const allowedFields = ['name', 'contact_phone', 'city', 'categories', 'address'];\n  const cleanUpdate = {};\n\n  for (const field of allowedFields) {\n    if (updateData[field] !== undefined) {\n      cleanUpdate[field] = updateData[field];\n    }\n  }\n\n  if (Object.keys(cleanUpdate).length === 0) {\n    return {\n      json: {\n        error: true,\n        message: \"Nenhum campo válido para atualizar\"\n      }\n    };\n  }\n\n  await $request({\n    method: 'PATCH',\n    url: `${supabaseUrl}/rest/v1/suppliers`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      [filterKey]: `eq.${filterValue}`\n    },\n    body: cleanUpdate,\n    json: true\n  });\n\n  return {\n    json: {\n      success: true,\n      updated_fields: Object.keys(cleanUpdate),\n      message: \"✅ Dados do fornecedor atualizados!\"\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao atualizar: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2368
+      ],
+      "id": "eeee1111-3333-4444-5555-000000000000",
+      "name": "update_supplier_data"
+    },
+    {
+      "parameters": {
+        "name": "price_upload",
+        "description": "Gerencia upload e processamento de listas de preços de fornecedores.",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# 💰 PRICE UPLOAD AGENT\n\n## RESPONSABILIDADE\nProcessar listas de preços enviadas por fornecedores.\n\n## TOOLS DISPONÍVEIS\n\n### parse_price_list\nInterpreta lista de preços em texto livre.\nExtrai: produto, marca, formato, preço.\n\n### bulk_update_prices\nAtualiza preços em massa no Supabase.\nCria produtos se não existirem.\n\n## FORMATOS ACEITOS\n\n### Formato Simples\nArroz Tio João 5kg - R$ 28,90\nFeijão Camil 1kg - 8,50\nÓleo Liza 900ml - R$ 7.80\n\n### Formato Tabular\nProduto | Marca | Formato | Preço\nArroz | Tio João | 5kg | 28.90\nFeijão | Camil | 1kg | 8.50\n\n### Formato CSV\nproduto,marca,formato,preco\nArroz,Tio João,5kg,28.90\nFeijão,Camil,1kg,8.50\n\n## FLUXO DE PROCESSAMENTO\n\n1. Receber lista (texto)\n2. Parsear e estruturar\n3. Validar produtos (existem no catálogo?)\n4. Para novos produtos → adicionar ao catálogo\n5. Atualizar preços em suppliers_products\n6. Retornar resumo: X produtos atualizados, Y novos\n\n## VALIDAÇÕES\n\n- Preço deve ser numérico positivo\n- Formato deve ser válido\n- Se produto não existe → criar em products primeiro\n- Associar ao supplier_id correto\n\n## MANEJO DE ERROS\n\n- Linha mal formatada → avisar e pular\n- Produto duplicado → atualizar preço\n- Preço inválido → pedir correção\n\n## OUTPUT\nRetorna resumo:\n{\n  \"total_processed\": int,\n  \"updated\": int,\n  \"created\": int,\n  \"errors\": [],\n  \"summary\": \"string formatado\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -448,
+        2816
+      ],
+      "id": "aaaa2222-4444-5555-6666-777777777777",
+      "name": "Price Upload Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        3040
+      ],
+      "id": "bbbb2222-4444-5555-6666-888888888888",
+      "name": "OpenAI Chat Price",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -224,
+        3264
+      ],
+      "id": "cccc2222-4444-5555-6666-999999999999",
+      "name": "Memory Price"
+    },
+    {
+      "parameters": {
+        "description": "Interpreta e estrutura lista de preços em texto livre.",
+        "jsCode": "const input = $input.first().json;\nconst priceListText = input.price_list || input.text || input.message;\n\nif (!priceListText) {\n  return {\n    json: {\n      error: true,\n      message: \"Lista de preços não fornecida\"\n    }\n  };\n}\n\nconst lines = priceListText.split('\\n').filter(line => line.trim());\nconst items = [];\nconst errors = [];\n\nfor (let i = 0; i < lines.length; i++) {\n  const line = lines[i].trim();\n\n  // Ignorar cabeçalhos\n  if (line.toLowerCase().includes('produto') && line.toLowerCase().includes('preço')) {\n    continue;\n  }\n\n  // Padrão: Produto Marca Formato - R$ Preço\n  const pattern1 = /^(.+?)\\s+[-–]\\s*R?\\$?\\s*([\\d.,]+)$/i;\n  const match1 = line.match(pattern1);\n\n  if (match1) {\n    const productPart = match1[1].trim();\n    const price = parseFloat(match1[2].replace(',', '.'));\n\n    // Tentar separar produto, marca, formato\n    const parts = productPart.split(/\\s+/);\n    let product = '';\n    let brand = '';\n    let format = '';\n\n    if (parts.length >= 3) {\n      product = parts.slice(0, -2).join(' ');\n      brand = parts[parts.length - 2];\n      format = parts[parts.length - 1];\n    } else if (parts.length === 2) {\n      product = parts[0];\n      brand = parts[1];\n    } else {\n      product = productPart;\n    }\n\n    items.push({\n      product_name: product,\n      brand: brand || 'N/A',\n      format: format || 'un',\n      price: price,\n      original_line: line\n    });\n    continue;\n  }\n\n  // Padrão CSV/Tabular: produto,marca,formato,preço ou separado por |\n  const pattern2 = /^(.+?)[,|](.+?)[,|](.+?)[,|]\\s*R?\\$?\\s*([\\d.,]+)$/i;\n  const match2 = line.match(pattern2);\n\n  if (match2) {\n    items.push({\n      product_name: match2[1].trim(),\n      brand: match2[2].trim(),\n      format: match2[3].trim(),\n      price: parseFloat(match2[4].replace(',', '.')),\n      original_line: line\n    });\n    continue;\n  }\n\n  // Linha não reconhecida\n  errors.push({\n    line_number: i + 1,\n    line: line,\n    error: \"Formato não reconhecido\"\n  });\n}\n\nreturn {\n  json: {\n    success: true,\n    items_parsed: items.length,\n    items: items,\n    errors: errors,\n    errors_count: errors.length\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        2816
+      ],
+      "id": "dddd2222-4444-5555-6666-000000000000",
+      "name": "parse_price_list"
+    },
+    {
+      "parameters": {
+        "description": "Atualiza preços em massa no Supabase, criando produtos se necessário.",
+        "jsCode": "const input = $input.first().json;\nconst items = input.items || [];\nconst supplierId = input.supplier_id;\nconst phoneNumber = input.phone_number || input.channel_id;\n\nif (!items || items.length === 0) {\n  return {\n    json: {\n      error: true,\n      message: \"Nenhum item para processar\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  // Se não tiver supplier_id, buscar por phone\n  let finalSupplierId = supplierId;\n\n  if (!finalSupplierId && phoneNumber) {\n    const supplier = await $request({\n      method: 'GET',\n      url: `${supabaseUrl}/rest/v1/suppliers`,\n      headers: {\n        'apikey': supabaseKey,\n        'Authorization': `Bearer ${supabaseKey}`,\n        'Content-Type': 'application/json'\n      },\n      qs: {\n        'contact_phone': `ilike.%${phoneNumber}%`,\n        'select': 'id'\n      },\n      json: true\n    });\n\n    if (supplier && supplier.length > 0) {\n      finalSupplierId = supplier[0].id;\n    }\n  }\n\n  if (!finalSupplierId) {\n    return {\n      json: {\n        error: true,\n        message: \"Fornecedor não identificado\"\n      }\n    };\n  }\n\n  let updated = 0;\n  let created = 0;\n  const errors = [];\n\n  for (const item of items) {\n    try {\n      // Buscar ou criar produto\n      let product = await $request({\n        method: 'GET',\n        url: `${supabaseUrl}/rest/v1/products`,\n        headers: {\n          'apikey': supabaseKey,\n          'Authorization': `Bearer ${supabaseKey}`,\n          'Content-Type': 'application/json'\n        },\n        qs: {\n          'name': `ilike.${item.product_name}`,\n          'brand': `ilike.${item.brand}`,\n          'select': 'id'\n        },\n        json: true\n      });\n\n      let productId;\n\n      if (!product || product.length === 0) {\n        // Criar produto\n        const newProduct = await $request({\n          method: 'POST',\n          url: `${supabaseUrl}/rest/v1/products`,\n          headers: {\n            'apikey': supabaseKey,\n            'Authorization': `Bearer ${supabaseKey}`,\n            'Content-Type': 'application/json',\n            'Prefer': 'return=representation'\n          },\n          body: {\n            name: item.product_name,\n            brand: item.brand,\n            format: item.format,\n            unit: 'un'\n          },\n          json: true\n        });\n        productId = newProduct[0].id;\n        created++;\n      } else {\n        productId = product[0].id;\n      }\n\n      // Atualizar ou criar preço em suppliers_products\n      const existing = await $request({\n        method: 'GET',\n        url: `${supabaseUrl}/rest/v1/suppliers_products`,\n        headers: {\n          'apikey': supabaseKey,\n          'Authorization': `Bearer ${supabaseKey}`,\n          'Content-Type': 'application/json'\n        },\n        qs: {\n          'supplier_id': `eq.${finalSupplierId}`,\n          'product_id': `eq.${productId}`\n        },\n        json: true\n      });\n\n      if (existing && existing.length > 0) {\n        // Atualizar preço\n        await $request({\n          method: 'PATCH',\n          url: `${supabaseUrl}/rest/v1/suppliers_products`,\n          headers: {\n            'apikey': supabaseKey,\n            'Authorization': `Bearer ${supabaseKey}`,\n            'Content-Type': 'application/json'\n          },\n          qs: {\n            'supplier_id': `eq.${finalSupplierId}`,\n            'product_id': `eq.${productId}`\n          },\n          body: {\n            price: item.price,\n            updated_at: new Date().toISOString()\n          },\n          json: true\n        });\n        updated++;\n      } else {\n        // Criar relação\n        await $request({\n          method: 'POST',\n          url: `${supabaseUrl}/rest/v1/suppliers_products`,\n          headers: {\n            'apikey': supabaseKey,\n            'Authorization': `Bearer ${supabaseKey}`,\n            'Content-Type': 'application/json'\n          },\n          body: {\n            supplier_id: finalSupplierId,\n            product_id: productId,\n            price: item.price,\n            created_at: new Date().toISOString()\n          },\n          json: true\n        });\n        created++;\n      }\n    } catch (itemError) {\n      errors.push({\n        item: item.product_name,\n        error: itemError.message\n      });\n    }\n  }\n\n  return {\n    json: {\n      success: true,\n      total_processed: items.length,\n      updated: updated,\n      created: created,\n      errors: errors,\n      summary: `✅ Processado: ${items.length} itens\\n📊 Atualizados: ${updated}\\n➕ Novos: ${created}\\n❌ Erros: ${errors.length}`\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro no processamento: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        3040
+      ],
+      "id": "eeee2222-4444-5555-6666-111111111111",
+      "name": "bulk_update_prices"
     }
   ],
   "connections": {
@@ -902,6 +1413,336 @@
           {
             "node": "Enviar Respuesta",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopping Flow Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Shopping": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Shopping": {
+      "ai_memory": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalize_shopping_list": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_savings": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "segment_by_supplier": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_prices_for_product": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_best_price": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "execute_checkout": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Search Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Vector": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Vector Search Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Vector": {
+      "ai_memory": [
+        [
+          {
+            "node": "Vector Search Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_product_catalog": {
+      "ai_tool": [
+        [
+          {
+            "node": "Vector Search Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "find_similar_products": {
+      "ai_tool": [
+        [
+          {
+            "node": "Vector Search Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate_product_match": {
+      "ai_tool": [
+        [
+          {
+            "node": "Vector Search Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preference Config Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Preference": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Preference Config Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Preference": {
+      "ai_memory": [
+        [
+          {
+            "node": "Preference Config Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "save_user_preferences": {
+      "ai_tool": [
+        [
+          {
+            "node": "Preference Config Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_delivery_preferences": {
+      "ai_tool": [
+        [
+          {
+            "node": "Preference Config Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supplier Manager Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat SupplierMgr": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Supplier Manager Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory SupplierMgr": {
+      "ai_memory": [
+        [
+          {
+            "node": "Supplier Manager Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "register_supplier": {
+      "ai_tool": [
+        [
+          {
+            "node": "Supplier Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_supplier_data": {
+      "ai_tool": [
+        [
+          {
+            "node": "Supplier Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Price Upload Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Price": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Price Upload Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Price": {
+      "ai_memory": [
+        [
+          {
+            "node": "Price Upload Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse_price_list": {
+      "ai_tool": [
+        [
+          {
+            "node": "Price Upload Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "bulk_update_prices": {
+      "ai_tool": [
+        [
+          {
+            "node": "Price Upload Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]
