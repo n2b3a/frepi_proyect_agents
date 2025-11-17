@@ -1161,6 +1161,74 @@
           "name": "Supabase account"
         }
       }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        920
+      ],
+      "id": "4ac2a27d-16fb-491e-bf85-74ac516bc78e",
+      "name": "OpenAI Chat Supplier Journey",
+      "credentials": {
+        "openAiApi": {
+          "id": "tGY4ih3okXdhCsCt",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionKey": "={{ $json.phone_number }}",
+        "contextWindowLength": 5
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        -640,
+        1080
+      ],
+      "id": "14e564df-0222-4e4e-ad46-33eb1a948d97",
+      "name": "Memory Supplier Journey"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -2240,
+        760
+      ],
+      "id": "0abb9e49-d30b-489b-afb6-97e16e444d75",
+      "name": "OpenAI Chat Onboarding",
+      "credentials": {
+        "openAiApi": {
+          "id": "tGY4ih3okXdhCsCt",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionKey": "={{ $json.phone_number }}",
+        "contextWindowLength": 3
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        -2240,
+        920
+      ],
+      "id": "823b0246-9db7-47c3-8b76-20262bae1895",
+      "name": "Memory Onboarding"
     }
   ],
   "connections": {
@@ -1832,6 +1900,50 @@
           {
             "node": "Buscar Usuario",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Supplier Journey": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Supplier Journey": {
+      "ai_memory": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Onboarding": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Onboarding Flow Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Onboarding": {
+      "ai_memory": [
+        [
+          {
+            "node": "Onboarding Flow Agent",
+            "type": "ai_memory",
             "index": 0
           }
         ]
