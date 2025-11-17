@@ -1,0 +1,929 @@
+{
+  "name": "Frepi MVP2 - Agent Architecture",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst config = {\n  \"PRICE_VALIDITY_DAYS\": 30,\n  \"PREFERENCE_FIELDS_TOTAL\": 5,\n  \"WELCOME_MESSAGE\": \"🍽️ *Bem-vindo ao Frepi!*\",\n  \"SESSION_TIMEOUT_MINUTES\": 60,\n  \"AI_MAX_RETRIES\": 3,\n  \"AI_TIMEOUT_SECONDS\": 30,\n  \"INCOMPLETE_PROFILE_WARNING\": \"⚠️ *Perfil incompleto ({percentage}%)*\\n→ Configure preferências para melhores recomendações!\\n\\n\",\n  \"CONTINUATION_MESSAGE\": \"✅ *Pronto!*\\n\\n💬 Posso te ajudar com algo mais?\\n\\n1️⃣ Fazer outra compra\\n2️⃣ Atualizar preços\\n3️⃣ Registrar fornecedor\\n4️⃣ Ver menú principal\\n\\nDigite o número ou descreva o que precisa.\"\n};\n\nreturn [{\n  json: {\n    ...input,\n    ...config\n  }\n}];"
+      },
+      "id": "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890",
+      "name": "Config Global",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3360,
+        240
+      ],
+      "notes": "Configuração global do workflow. Modifique aqui para ajustar comportamento."
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -3584,
+        240
+      ],
+      "id": "b2c3d4e5-f678-90a1-b2c3-d4e5f6789012",
+      "name": "WhatsApp Trigger",
+      "webhookId": "4399b6d8-3058-4de1-9df4-ffdb588f5a08",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "nL8j9VXr95OvYqlC",
+          "name": "Frepi bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const input = $input.first();\n  if (!input || !input.json) {\n    console.error('[Extraer Datos WhatsApp] Input vacío ou inválido');\n    return [{\n      json: {\n        error: true,\n        error_message: 'Input inválido',\n        error_node: 'Extraer Datos WhatsApp',\n        phone_number: 'unknown'\n      }\n    }];\n  }\n\n  const data = input.json;\n\n  if (!data.messages || data.messages.length === 0) {\n    console.log('⏭️ [Extraer Datos] Ignorando notificação de status:', data.statuses?.[0]?.status);\n    return [];\n  }\n\n  const message = data.messages[0];\n  const phoneNumber = message.from;\n  const userName = data.contacts[0].profile.name;\n  const messageId = message.id;\n  const timestamp = message.timestamp;\n\n  if (message.type !== 'text') {\n    console.log(`📎 [Extraer Datos] Arquivo não suportado detectado: ${message.type}`);\n    \n    const unsupportedMessage = `📎 Oi! Percebi que você enviou um arquivo (${message.type}).\\n\\nPor enquanto, só consigo processar mensagens de texto. 📝\\n\\n🔜 Em breve vou poder receber fotos de notas fiscais!\\n\\nDigite \\\"menu\\\" para ver as opções disponíveis.`;\n    \n    return [{\n      json: {\n        phone_number: phoneNumber,\n        message: unsupportedMessage,\n        user_name: userName,\n        message_id: messageId,\n        timestamp: timestamp,\n        is_unsupported_file: true,\n        file_type: message.type,\n        output: unsupportedMessage\n      }\n    }];\n  }\n\n  const messageText = message.text.body;\n\n  console.log('📱 [Extraer Datos] Mensagem recebida de:', phoneNumber);\n  console.log('💬 [Extraer Datos] Conteúdo:', messageText);\n\n  return [{\n    json: {\n      phone_number: phoneNumber,\n      message: messageText,\n      user_name: userName,\n      message_id: messageId,\n      timestamp: timestamp,\n      is_unsupported_file: false,\n      raw_data: input\n    }\n  }];\n\n} catch (error) {\n  console.error(`[Extraer Datos WhatsApp] Erro: ${error.message}`);\n  console.error(`[Extraer Datos WhatsApp] Stack: ${error.stack}`);\n\n  return [{\n    json: {\n      error: true,\n      error_message: error.message,\n      error_node: 'Extraer Datos WhatsApp',\n      phone_number: input?.json?.phone_number || input?.json?.user_data?.phone_number || 'unknown',\n      output: 'Desculpe, algo deu errado. Por favor, tente novamente ou digite \\\"menu\\\" para voltar.'\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3136,
+        240
+      ],
+      "id": "c3d4e5f6-7890-a1b2-c3d4-e5f678901234",
+      "name": "Extraer Datos WhatsApp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst messageId = input.message_id;\nconst phoneNumber = input.phone_number;\n\nif (!messageId || !phoneNumber) {\n  return [{\n    json: {\n      ...input,\n      is_duplicate: false\n    }\n  }];\n}\n\nconst cacheKey = `${phoneNumber}_${messageId}`;\nconst processedMessages = this.getWorkflowStaticData('global');\n\nif (processedMessages[cacheKey]) {\n  console.log(`🚫 [Check Duplicate] Mensagem duplicada detectada: ${messageId}`);\n  return [];\n}\n\nprocessedMessages[cacheKey] = Date.now();\n\nconst now = Date.now();\nconst ONE_HOUR = 60 * 60 * 1000;\nfor (const key in processedMessages) {\n  if (now - processedMessages[key] > ONE_HOUR) {\n    delete processedMessages[key];\n  }\n}\n\nreturn [{\n  json: {\n    ...input,\n    is_duplicate: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2912,
+        240
+      ],
+      "id": "d4e5f678-90a1-b2c3-d4e5-f67890123456",
+      "name": "Check Duplicate Message"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "restaurant_people",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "whatsapp_number",
+              "condition": "eq",
+              "keyValue": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2688,
+        240
+      ],
+      "id": "e5f67890-a1b2-c3d4-e5f6-789012345678",
+      "name": "Buscar Usuario",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "YaSYB0r907WCaDZK",
+          "name": "Frepi Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890",
+              "leftValue": "={{ Object.keys($json).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6789012-3456-78ab-cdef-0123456789ab",
+      "name": "IF: Usuario Existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2464,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "# 🍽️ CUSTOMER JOURNEY AGENT - FREPI\n\n## CONTEXTO\nVocê é o Frepi, assistente de compras inteligente para restaurantes no Brasil.\nVocê ajuda restaurantes a economizar tempo e dinheiro nas compras diárias.\n\n## MISSÃO\nOrquestrar toda a jornada do cliente restaurante:\n1. Onboarding (se novo usuário)\n2. Menu contextual (baseado em perfil e sessão)\n3. Fluxo de compra inteligente\n4. Configuração de preferências\n\n## SUB-AGENTS DISPONÍVEIS (use quando apropriado)\n\n### 🎯 session_manager\nGerencia sessões ativas do usuário.\nUSE quando precisar:\n- Verificar se há sessão ativa\n- Criar nova sessão\n- Atualizar status de sessão\n- Entender contexto da conversa atual\n\n### 📋 menu_generator\nGera menu personalizado baseado em perfil do usuário.\nUSE quando usuário:\n- Disser \"menu\", \"opções\", \"ajuda\"\n- Perguntar \"o que posso fazer?\"\n- Finalizar uma ação e precisar próximos passos\n\n### 🛒 shopping_flow\nGerencia todo o fluxo de compra inteligente.\nUSE quando usuário:\n- Disser \"quero fazer compra\", \"preciso comprar\"\n- Enviar lista de produtos\n- Pedir comparação de preços\n\n### 🔍 vector_search\nBusca semântica de produtos no catálogo.\nUSE quando precisar:\n- Identificar produtos mencionados pelo usuário\n- Buscar alternativas ou similares\n- Encontrar produtos por descrição vaga\n\n### ⚙️ preference_config\nConfigura preferências de compra do restaurante.\nUSE quando usuário:\n- Disser \"configurar preferências\"\n- Quiser definir marcas favoritas\n- Quiser ajustar formatos/quantidades padrão\n\n## REGRAS CONVERSACIONAIS\n\n1. **Idioma**: 100% Português Brasileiro\n2. **Tom**: Amigável, prestativo, eficiente (não robotizado)\n3. **Emojis**: Use sempre relevantes ao contexto:\n   - 🍽️ restaurante/pedidos\n   - 💰 preços/economia\n   - 📦 fornecedores\n   - ✅ confirmações\n   - ⚠️ avisos\n   - 📊 comparações\n   - 🛒 compras\n4. **Clareza**: UMA pergunta por vez, sem sobrecarregar\n5. **Confirmações**: Sempre confirme ações importantes antes de executar\n\n## FLUXOS TÍPICOS\n\n### Novo Usuário\n1. Detectar que é novo (session_manager retorna null)\n2. Cumprimentar caloroso\n3. Explicar o que é Frepi\n4. Perguntar dados básicos para onboarding\n5. Após completar → menu_generator\n\n### Usuário Quer Comprar\n1. Perguntar \"Qual a sua lista de compra?\"\n2. Receber lista (formato livre)\n3. Delegar para shopping_flow\n4. Apresentar análise de preços\n5. Confirmar e executar pedido\n\n### Usuário Quer Configurar\n1. menu_generator (mostrar % completude)\n2. Delegar para preference_config\n3. Guiar passo a passo\n4. Confirmar salvamento\n\n## MANEJO DE ERROS\n\n- Se usuário envia arquivo não suportado → explicar que apenas texto por enquanto\n- Se ferramenta falha → desculpar-se e oferecer alternativa\n- Se usuário confuso → menu_generator para resetear\n\n## OUTPUT\nSempre responda em português brasileiro, natural, com emojis relevantes.\nNunca mencione nomes técnicos de agents ou tools ao usuário."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        -1792,
+        128
+      ],
+      "id": "a1111111-2222-3333-4444-555566667777",
+      "name": "Customer Journey Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1568,
+        352
+      ],
+      "id": "b2222222-3333-4444-5555-666677778888",
+      "name": "OpenAI Chat Customer",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 30
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -1568,
+        576
+      ],
+      "id": "c3333333-4444-5555-6666-777788889999",
+      "name": "Memory Customer"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "# 📦 SUPPLIER JOURNEY AGENT - FREPI\n\n## CONTEXTO\nVocê gerencia fornecedores no sistema Frepi.\nVocê ajuda distribuidores a registrar-se e atualizar preços facilmente.\n\n## MISSÃO\nOrquestrar a jornada do fornecedor:\n1. Registro de novos fornecedores\n2. Atualização de dados de fornecedor\n3. Upload e gestão de listas de preços\n\n## SUB-AGENTS DISPONÍVEIS\n\n### 📦 supplier_manager\nGerencia cadastro e dados de fornecedores.\nUSE quando:\n- Novo fornecedor quer se registrar\n- Fornecedor quer atualizar dados (endereço, contato, etc)\n- Precisar validar dados de fornecedor\n\n### 💰 price_upload\nGerencia upload e processamento de listas de preços.\nUSE quando:\n- Fornecedor enviar lista de preços\n- Precisar atualizar preços de produtos\n- Validar formato de lista recebida\n\n### 🎯 session_manager\nGerencia sessões (mesmo agent que Customer side).\nUSE para tracking de sessão.\n\n## REGRAS CONVERSACIONAIS\n\n1. **Idioma**: 100% Português Brasileiro\n2. **Tom**: Profissional mas amigável\n3. **Emojis**: 📦 💰 ✅ ⚠️ 📊\n4. **Clareza**: Instruções passo a passo\n5. **Validação**: Sempre validar dados antes de salvar\n\n## FLUXOS TÍPICOS\n\n### Novo Fornecedor\n1. Cumprimentar\n2. Delegar para supplier_manager\n3. Coletar: nome empresa, CNPJ, contato, cidade, categorias\n4. Confirmar registro\n5. Guiar para upload de preços\n\n### Atualizar Preços\n1. Pedir lista de preços (pode ser texto, tabela, etc)\n2. Delegar para price_upload\n3. Validar e normalizar produtos\n4. Confirmar quantidade de produtos atualizados\n5. Agradecer\n\n## MANEJO DE ERROS\n\n- Lista de preços com formato inválido → explicar formato esperado\n- Produtos não encontrados no catálogo → listar e pedir confirmação\n- CNPJ inválido → pedir reenvio\n\n## OUTPUT\nPortuguês brasileiro, profissional, emojis relevantes."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        -1792,
+        800
+      ],
+      "id": "d4444444-5555-6666-7777-888899990000",
+      "name": "Supplier Journey Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1568,
+        1024
+      ],
+      "id": "e5555555-6666-7777-8888-999900001111",
+      "name": "OpenAI Chat Supplier",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 30
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -1568,
+        1248
+      ],
+      "id": "f6666666-7777-8888-9999-000011112222",
+      "name": "Memory Supplier"
+    },
+    {
+      "parameters": {
+        "name": "session_manager",
+        "description": "Gerencia sessões ativas do usuário. Verifica sessão existente, cria nova, ou atualiza status. Retorna contexto de sessão.",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# 🎯 SESSION MANAGER AGENT\n\n## RESPONSABILIDADE\nVocê gerencia o estado de sessões no Supabase (tabela line_sessions).\n\n## TOOLS DISPONÍVEIS\n\n### check_active_session\nBusca sessão ativa do usuário.\nRetorna: session_id, session_type, created_at, last_interaction\n\n### create_session\nCria nova sessão.\nParâmetros: channel_id (phone), session_type\n\n### update_session_status\nAtualiza session_goal_achieved.\nUsa quando detectar que objetivo foi cumprido.\n\n## LÓGICA\n\n1. Sempre começar chamando check_active_session\n2. Se null → criar nova sessão tipo \"discovery\"\n3. Se existe → retornar contexto\n4. Observar conversação para detectar quando marcar goal_achieved:\n   - Compra confirmada → goal_achieved=true\n   - Registro fornecedor completo → goal_achieved=true\n   - Usuário disse \"cancelar\" ou \"obrigado, é só isso\" → goal_achieved=true\n\n## SESSION TYPES VÁLIDOS\n- discovery: Usuário explorando sistema\n- shopping: Fluxo de compra ativo\n- upload_prices: Fornecedor atualizando preços\n- register_supplier: Cadastro de fornecedor\n- setup: Configuração inicial\n- config: Ajuste de preferências\n\n## OUTPUT\nRetorna JSON:\n{\n  \"has_active_session\": boolean,\n  \"session_id\": \"uuid ou null\",\n  \"session_type\": \"discovery|shopping|upload_prices|register_supplier|setup|config\",\n  \"session_context\": \"texto descritivo do contexto\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -1120,
+        128
+      ],
+      "id": "a7777777-8888-9999-0000-111122223333",
+      "name": "Session Manager Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -896,
+        352
+      ],
+      "id": "b8888888-9999-0000-1111-222233334444",
+      "name": "OpenAI Chat Session",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -896,
+        576
+      ],
+      "id": "c9999999-0000-1111-2222-333344445555",
+      "name": "Memory Session"
+    },
+    {
+      "parameters": {
+        "description": "Busca sessão ativa do usuário em Supabase. Retorna null se não houver sessão ativa.",
+        "jsCode": "const phoneNumber = $input.first().json.phone_number || $input.first().json.channel_id;\n\nif (!phoneNumber) {\n  return JSON.stringify({\n    error: true,\n    message: \"Phone number não fornecido\"\n  });\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const sessions = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/line_sessions`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'channel_id': `eq.${phoneNumber}`,\n      'session_goal_achieved': 'is.null',\n      'order': 'created_at.desc',\n      'limit': '1'\n    },\n    json: true\n  });\n  \n  if (sessions && sessions.length > 0) {\n    const session = sessions[0];\n    return {\n      json: {\n        has_active_session: true,\n        session_id: session.id,\n        session_type: session.session_type,\n        created_at: session.created_at,\n        session_context: `Sessão ${session.session_type} iniciada em ${new Date(session.created_at).toLocaleString('pt-BR')}`\n      }\n    };\n  } else {\n    return {\n      json: {\n        has_active_session: false,\n        session_id: null,\n        session_type: null,\n        session_context: \"Nenhuma sessão ativa\"\n      }\n    };\n  }\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao buscar sessão: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        128
+      ],
+      "id": "d0000000-1111-2222-3333-444455556666",
+      "name": "check_active_session"
+    },
+    {
+      "parameters": {
+        "description": "Cria nova sessão no Supabase. Retorna session_id criado.",
+        "jsCode": "const input = $input.first().json;\nconst phoneNumber = input.phone_number || input.channel_id;\nconst sessionType = input.session_type || 'discovery';\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const response = await $request({\n    method: 'POST',\n    url: `${supabaseUrl}/rest/v1/line_sessions`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json',\n      'Prefer': 'return=representation'\n    },\n    body: {\n      channel_id: phoneNumber,\n      session_type: sessionType,\n      session_goal_achieved: null,\n      created_at: new Date().toISOString()\n    },\n    json: true\n  });\n  \n  const session = response[0];\n  \n  return {\n    json: {\n      success: true,\n      session_id: session.id,\n      session_type: session.session_type,\n      message: `Sessão ${sessionType} criada com sucesso`\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao criar sessão: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        352
+      ],
+      "id": "e1111111-2222-3333-4444-555566667777",
+      "name": "create_session"
+    },
+    {
+      "parameters": {
+        "description": "Atualiza status da sessão marcando objetivo como alcançado.",
+        "jsCode": "const input = $input.first().json;\nconst sessionId = input.session_id;\n\nif (!sessionId) {\n  return {\n    json: {\n      error: true,\n      message: \"session_id não fornecido\"\n    }\n  };\n}\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  await $request({\n    method: 'PATCH',\n    url: `${supabaseUrl}/rest/v1/line_sessions`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'id': `eq.${sessionId}`\n    },\n    body: {\n      session_goal_achieved: true,\n      updated_at: new Date().toISOString()\n    },\n    json: true\n  });\n  \n  return {\n    json: {\n      success: true,\n      message: \"Sessão atualizada com sucesso\"\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao atualizar sessão: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        576
+      ],
+      "id": "f2222222-3333-4444-5555-666677778888",
+      "name": "update_session_status"
+    },
+    {
+      "parameters": {
+        "name": "menu_generator",
+        "description": "Gera menu contextual baseado em perfil do usuário, completude de preferências e sessões ativas.",
+        "promptType": "define",
+        "text": "={{ $json.query || $json.message }}",
+        "options": {
+          "systemMessage": "# 📋 MENU GENERATOR AGENT\n\n## RESPONSABILIDADE\nGerar menu personalizado para o usuário baseado em seu stage e contexto.\n\n## TOOLS DISPONÍVEIS\n\n### get_user_profile\nBusca dados do usuário: role, preferences, completude.\nQuery Supabase: restaurant_people + preferences\n\n### get_active_sessions\nVerifica sessões ativas do usuário.\nQuery Supabase: line_sessions WHERE goal_achieved IS NULL\n\n### calculate_completeness\nCalcula % de completude de preferências.\nCampos: preferred_brands, preferred_formats, order_frequency, delivery_schedule, restrictions\n\n## LÓGICA DE MENU\n\n### Para RESTAURANTE (role=customer)\n\n**Se completude < 50%:**\n\n🍽️ *Bem-vindo ao Frepi!*\n\n⚠️ *Perfil incompleto ({completude}%)*\n→ Configure preferências para melhores recomendações!\n\n*Opções disponíveis:*\n1️⃣ Fazer uma compra 🛒\n2️⃣ Configurar preferências ⭐ (recomendado)\n3️⃣ Ver histórico de pedidos\n4️⃣ Ajuda ❓\n\nResponda com o número da opção desejada.\n\n**Se completude >= 50%:**\n\n🍽️ *Menu Principal*\n\n*O que deseja fazer?*\n1️⃣ Fazer uma compra 🛒\n2️⃣ Atualizar preferências (configurado {completude}%)\n3️⃣ Ver histórico de pedidos 📋\n4️⃣ Ver meus fornecedores 📦\n5️⃣ Ajuda ❓\n\n**Se há sessão \"shopping\" ativa:**\nIncluir no topo:\n🛒 *Você tem uma compra em andamento*\n0️⃣ Continuar compra\n\n### Para FORNECEDOR (role=supplier)\n\n📦 *Menu Fornecedor*\n\n*Opções:*\n1️⃣ Atualizar lista de preços 💰\n2️⃣ Ver meus produtos cadastrados 📋\n3️⃣ Atualizar dados da empresa 📝\n4️⃣ Ver pedidos recebidos 📦\n5️⃣ Ajuda ❓\n\n## USER STAGES\n\nDeterminar stage baseado em completude:\n- **new_user**: < 25% → enfatizar configuração\n- **active_user**: 25-75% → menu balanceado  \n- **power_user**: > 75% → ações avançadas\n\n## OUTPUT\nRetorna JSON:\n{\n  \"menu_text\": \"string formatado com menu completo\",\n  \"user_stage\": \"new_user|active_user|power_user\",\n  \"completeness_percent\": float,\n  \"has_active_shopping\": boolean\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        -1120,
+        800
+      ],
+      "id": "a3333333-4444-5555-6666-777788889999",
+      "name": "Menu Generator Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -896,
+        1024
+      ],
+      "id": "b4444444-5555-6666-7777-888899990000",
+      "name": "OpenAI Chat Menu",
+      "credentials": {
+        "openAiApi": {
+          "id": "MdAepMtuPO5nFVI0",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}",
+        "contextWindowLength": 5
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -896,
+        1248
+      ],
+      "id": "c5555555-6666-7777-8888-999900001111",
+      "name": "Memory Menu"
+    },
+    {
+      "parameters": {
+        "description": "Busca perfil do usuário incluindo role e preferências.",
+        "jsCode": "const phoneNumber = $input.first().json.phone_number || $input.first().json.channel_id;\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const user = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/restaurant_people`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'whatsapp_number': `eq.${phoneNumber}`,\n      'select': '*'\n    },\n    json: true\n  });\n  \n  if (user && user.length > 0) {\n    return {\n      json: {\n        user_found: true,\n        user_data: user[0]\n      }\n    };\n  } else {\n    return {\n      json: {\n        user_found: false,\n        message: \"Usuário não encontrado\"\n      }\n    };\n  }\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao buscar perfil: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        800
+      ],
+      "id": "d6666666-7777-8888-9999-000011112222",
+      "name": "get_user_profile"
+    },
+    {
+      "parameters": {
+        "description": "Verifica se há sessões ativas para o usuário.",
+        "jsCode": "const phoneNumber = $input.first().json.phone_number || $input.first().json.channel_id;\n\nconst credentials = await this.getCredentials('supabaseApi');\nconst supabaseUrl = credentials.host;\nconst supabaseKey = credentials.serviceRole;\n\ntry {\n  const sessions = await $request({\n    method: 'GET',\n    url: `${supabaseUrl}/rest/v1/line_sessions`,\n    headers: {\n      'apikey': supabaseKey,\n      'Authorization': `Bearer ${supabaseKey}`,\n      'Content-Type': 'application/json'\n    },\n    qs: {\n      'channel_id': `eq.${phoneNumber}`,\n      'session_goal_achieved': 'is.null',\n      'select': '*'\n    },\n    json: true\n  });\n  \n  return {\n    json: {\n      has_active_sessions: sessions && sessions.length > 0,\n      active_sessions: sessions || [],\n      count: sessions ? sessions.length : 0\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      error: true,\n      message: `Erro ao buscar sessões: ${error.message}`\n    }\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        1024
+      ],
+      "id": "e7777777-8888-9999-0000-111122223333",
+      "name": "get_active_sessions"
+    },
+    {
+      "parameters": {
+        "description": "Calcula % de completude do perfil baseado em campos preenchidos.",
+        "jsCode": "const userData = $input.first().json.user_data || $input.first().json;\n\nconst fields = [\n  'preferred_brands',\n  'preferred_formats',\n  'order_frequency',\n  'delivery_schedule',\n  'special_restrictions'\n];\n\nlet filled = 0;\nfor (const field of fields) {\n  if (userData[field] && userData[field] !== '' && userData[field] !== null) {\n    filled++;\n  }\n}\n\nconst completeness = (filled / fields.length) * 100;\n\nreturn {\n  json: {\n    completeness_percent: Math.round(completeness),\n    fields_total: fields.length,\n    fields_filled: filled,\n    missing_fields: fields.filter(f => !userData[f] || userData[f] === '' || userData[f] === null)\n  }\n};"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        -672,
+        1248
+      ],
+      "id": "f8888888-9999-0000-1111-222233334444",
+      "name": "calculate_completeness"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst seen = new Set();\nconst unique = [];\n\nfor (const item of items) {\n  const output = item.json.output;\n  if (!seen.has(output)) {\n    seen.add(output);\n    unique.push(item);\n  }\n}\n\nreturn unique;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        1472
+      ],
+      "id": "a9999999-0000-1111-2222-333344445555",
+      "name": "Deduplicar Mensajes"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "message": "={{ $json.output }}",
+        "additionalFields": {
+          "to": "={{ $('Extraer Datos WhatsApp').first().json.phone_number }}"
+        }
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.2,
+      "position": [
+        -672,
+        1472
+      ],
+      "id": "b0000000-1111-2222-3333-444455556666",
+      "name": "Enviar Respuesta",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "nL8j9VXr95OvYqlC",
+          "name": "Frepi bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_type }}",
+                    "rightValue": "discovery",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "discovery"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_type }}",
+                    "rightValue": "shopping",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopping"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_type }}",
+                    "rightValue": "upload_prices",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "upload_prices"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_type }}",
+                    "rightValue": "register_supplier",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "register_supplier"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1111111-2222-3333-4444-555566667777",
+      "name": "Switch: Session Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2016,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config Global",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Global": {
+      "main": [
+        [
+          {
+            "node": "Extraer Datos WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Datos WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate Message": {
+      "main": [
+        [
+          {
+            "node": "Buscar Usuario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Usuario": {
+      "main": [
+        [
+          {
+            "node": "IF: Usuario Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Usuario Existe?": {
+      "main": [
+        [
+          {
+            "node": "Switch: Session Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: Session Type": {
+      "main": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Journey Agent": {
+      "main": [
+        [
+          {
+            "node": "Deduplicar Mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supplier Journey Agent": {
+      "main": [
+        [
+          {
+            "node": "Deduplicar Mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Customer": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Customer": {
+      "ai_memory": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Supplier": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Supplier": {
+      "ai_memory": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Manager Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Session": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Session": {
+      "ai_memory": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_active_session": {
+      "ai_tool": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_session": {
+      "ai_tool": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_session_status": {
+      "ai_tool": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu Generator Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Menu": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Menu": {
+      "ai_memory": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_user_profile": {
+      "ai_tool": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_active_sessions": {
+      "ai_tool": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_completeness": {
+      "ai_tool": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicar Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Enviar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d2222222-3333-4444-5555-666677778888",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "49b8809ac9c6d78ac189292d079f6fecdaf436806e595e6107033a10240b1fea"
+  },
+  "id": "e3333333-4444-5555-6666-777788889999",
+  "tags": [
+    {
+      "createdAt": "2025-11-16T00:00:00.000Z",
+      "updatedAt": "2025-11-16T00:00:00.000Z",
+      "id": "f4444444-5555-6666-7777-888899990000",
+      "name": "frepi-v2-agent-architecture"
+    }
+  ]
+}
