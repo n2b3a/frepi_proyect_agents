@@ -1122,48 +1122,31 @@
       ],
       "id": "8fd61912-4714-428a-9a5f-babd8e156680",
       "name": "Onboarding Flow Agent"
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "table": {
-          "__rl": true,
-          "mode": "list",
-          "value": "line_restaurants",
-          "cachedResultName": "line_restaurants"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "phone_number": "={{ $json.phone_number }}",
-            "name": "={{ $json.restaurant_name || 'Novo Restaurante' }}",
-            "city": "={{ $json.city || '' }}",
-            "preferred_brands": "={{ $json.preferred_brands || '[]' }}",
-            "preferred_formats": "={{ $json.preferred_formats || '[]' }}",
-            "created_at": "={{ $now.toISO() }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.supabase",
-      "typeVersion": 1.1,
-      "position": [
-        -2240,
-        880
-      ],
-      "id": "73fb5428-1413-4dcf-9328-9d102c7f0319",
-      "name": "Insertar Usuario",
-      "credentials": {
-        "supabaseApi": {
-          "id": "OKXSj3tzGQwuy8R3",
-          "name": "Supabase account"
-        }
-      }
     }
   ],
   "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config Global",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Global": {
+      "main": [
+        [
+          {
+            "node": "Extraer Datos WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Extraer Datos WhatsApp": {
       "main": [
         [
@@ -1175,25 +1158,29 @@
         ]
       ]
     },
-    "IF: Usuario Existe?": {
+    "Check Duplicate Message": {
       "main": [
         [
           {
-            "node": "Session Manager Agent",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Onboarding Flow Agent",
+            "node": "Buscar Usuario",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Session Manager Agent": {
+    "Buscar Usuario": {
+      "main": [
+        [
+          {
+            "node": "IF: Usuario Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Usuario Existe?": {
       "main": [
         [
           {
@@ -1201,25 +1188,10 @@
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Onboarding Flow Agent": {
-      "main": [
+        ],
         [
           {
-            "node": "Insertar Usuario",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Insertar Usuario": {
-      "main": [
-        [
-          {
-            "node": "Enviar Respuesta",
+            "node": "Onboarding Flow Agent",
             "type": "main",
             "index": 0
           }
@@ -1237,14 +1209,7 @@
         ],
         [
           {
-            "node": "Menu Generator Agent",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Preference Config Agent",
+            "node": "Customer Journey Agent",
             "type": "main",
             "index": 0
           }
@@ -1252,6 +1217,227 @@
         [
           {
             "node": "Supplier Journey Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Journey Agent": {
+      "main": [
+        [
+          {
+            "node": "Deduplicar Mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supplier Journey Agent": {
+      "main": [
+        [
+          {
+            "node": "Deduplicar Mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Customer": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Customer": {
+      "ai_memory": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Supplier": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Supplier": {
+      "ai_memory": [
+        [
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Manager Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "Supplier Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Session": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Session": {
+      "ai_memory": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_active_session": {
+      "ai_tool": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_session": {
+      "ai_tool": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_session_status": {
+      "ai_tool": [
+        [
+          {
+            "node": "Session Manager Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu Generator Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Customer Journey Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Menu": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Menu": {
+      "ai_memory": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_user_profile": {
+      "ai_tool": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_active_sessions": {
+      "ai_tool": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_completeness": {
+      "ai_tool": [
+        [
+          {
+            "node": "Menu Generator Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicar Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Enviar Respuesta",
             "type": "main",
             "index": 0
           }
@@ -1302,6 +1488,28 @@
         ]
       ]
     },
+    "calculate_savings": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "segment_by_supplier": {
+      "ai_tool": [
+        [
+          {
+            "node": "Shopping Flow Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "get_prices_for_product": {
       "ai_tool": [
         [
@@ -1324,18 +1532,7 @@
         ]
       ]
     },
-    "calculate_savings": {
-      "ai_tool": [
-        [
-          {
-            "node": "Shopping Flow Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "segment_by_supplier": {
+    "execute_checkout": {
       "ai_tool": [
         [
           {
@@ -1412,7 +1609,7 @@
         ]
       ]
     },
-    "Menu Generator Agent": {
+    "Preference Config Agent": {
       "ai_tool": [
         [
           {
@@ -1421,56 +1618,25 @@
             "index": 0
           }
         ]
-      ],
-      "main": [
-        [
-          {
-            "node": "Deduplicar Mensajes",
-            "type": "main",
-            "index": 0
-          }
-        ]
       ]
     },
-    "OpenAI Chat Menu": {
+    "OpenAI Chat Preference": {
       "ai_languageModel": [
         [
           {
-            "node": "Menu Generator Agent",
+            "node": "Preference Config Agent",
             "type": "ai_languageModel",
             "index": 0
           }
         ]
       ]
     },
-    "Memory Menu": {
+    "Memory Preference": {
       "ai_memory": [
         [
           {
-            "node": "Menu Generator Agent",
+            "node": "Preference Config Agent",
             "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "calculate_completeness": {
-      "ai_tool": [
-        [
-          {
-            "node": "Menu Generator Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Preference Config Agent": {
-      "main": [
-        [
-          {
-            "node": "Deduplicar Mensajes",
-            "type": "main",
             "index": 0
           }
         ]
@@ -1498,17 +1664,6 @@
         ]
       ]
     },
-    "Supplier Journey Agent": {
-      "main": [
-        [
-          {
-            "node": "Deduplicar Mensajes",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Supplier Manager Agent": {
       "ai_tool": [
         [
@@ -1520,7 +1675,7 @@
         ]
       ]
     },
-    "OpenAI Chat Supplier": {
+    "OpenAI Chat SupplierMgr": {
       "ai_languageModel": [
         [
           {
@@ -1531,7 +1686,7 @@
         ]
       ]
     },
-    "Memory Supplier": {
+    "Memory SupplierMgr": {
       "ai_memory": [
         [
           {
@@ -1614,224 +1769,6 @@
           {
             "node": "Price Upload Agent",
             "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Customer Journey Agent": {
-      "main": [
-        [
-          {
-            "node": "Deduplicar Mensajes",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Deduplicar Mensajes": {
-      "main": [
-        [
-          {
-            "node": "Enviar Respuesta",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat Session": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Memory Session": {
-      "ai_memory": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "check_active_session": {
-      "ai_tool": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "create_session": {
-      "ai_tool": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "get_active_sessions": {
-      "ai_tool": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "get_user_profile": {
-      "ai_tool": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "update_session_status": {
-      "ai_tool": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "execute_checkout": {
-      "ai_tool": [
-        [
-          {
-            "node": "Shopping Flow Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat Customer": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Customer Journey Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Memory Customer": {
-      "ai_memory": [
-        [
-          {
-            "node": "Customer Journey Agent",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat Preference": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Preference Config Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Memory Preference": {
-      "ai_memory": [
-        [
-          {
-            "node": "Preference Config Agent",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat SupplierMgr": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Supplier Manager Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Memory SupplierMgr": {
-      "ai_memory": [
-        [
-          {
-            "node": "Supplier Manager Agent",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Buscar Usuario": {
-      "ai_tool": [
-        [
-          {
-            "node": "Session Manager Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ],
-      "main": [
-        [
-          {
-            "node": "IF: Usuario Existe?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "WhatsApp Trigger": {
-      "main": [
-        [
-          {
-            "node": "Extraer Datos WhatsApp",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Duplicate Message": {
-      "main": [
-        [
-          {
-            "node": "Buscar Usuario",
-            "type": "main",
             "index": 0
           }
         ]
